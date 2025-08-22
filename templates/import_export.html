@@ -1,0 +1,46 @@
+\
+{% extends 'base.html' %}
+{% block content %}
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+  <div class="card bg-base-200">
+    <div class="card-body">
+      <h2 class="card-title">Export All CSV</h2>
+      <p>Download sabhi expenses as CSV.</p>
+      <a class="btn btn-primary" href="{{ url_for('export_csv') }}">Download expenses_all.csv</a>
+    </div>
+  </div>
+
+  <div class="card bg-base-200">
+    <div class="card-body">
+      <h2 class="card-title">Import CSV</h2>
+      <p>Headers: <code>date,time,category,subcategory,vendor,description,amount,payment_mode,payment_type,notes,attachment</code></p>
+      <form action="{{ url_for('import_csv') }}" method="post" enctype="multipart/form-data" class="flex gap-3 items-end">
+        <input type="file" name="file" accept=".csv" class="file-input file-input-bordered" required />
+        <button class="btn btn-primary">Import</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="card bg-base-200">
+    <div class="card-body">
+      <h2 class="card-title">Vendor-wise Report</h2>
+      <div class="flex gap-2">
+        <a class="btn" href="{{ url_for('report_vendor') }}">View</a>
+        <a class="btn" href="{{ url_for('export_vendor_csv') }}">CSV</a>
+        <a class="btn" href="{{ url_for('export_vendor_pdf') }}">PDF</a>
+      </div>
+    </div>
+  </div>
+
+  <div class="card bg-base-200">
+    <div class="card-body">
+      <h2 class="card-title">Monthly Report</h2>
+      <div class="flex gap-2">
+        <a class="btn" href="{{ url_for('report_monthly') }}">View</a>
+        <a class="btn" href="{{ url_for('export_monthly_csv') }}">CSV</a>
+        <a class="btn" href="{{ url_for('export_monthly_pdf') }}">PDF</a>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

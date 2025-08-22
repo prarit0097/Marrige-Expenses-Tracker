@@ -1,0 +1,76 @@
+\
+{% extends 'base.html' %}
+{% block content %}
+<div class="card bg-base-200 max-w-3xl mx-auto">
+  <div class="card-body">
+    <h2 class="card-title">{{ 'Edit Expense' if expense else 'Add Expense' }}</h2>
+    <form method="post" enctype="multipart/form-data" class="grid grid-cols-1 md:grid-cols-2 gap-3">
+      <label class="form-control">
+        <span class="label-text">Date</span>
+        <input type="date" name="date" class="input input-bordered" value="{{ form_defaults.get('date','') }}" required />
+      </label>
+      <label class="form-control">
+        <span class="label-text">Time</span>
+        <input type="time" name="time" class="input input-bordered" value="{{ form_defaults.get('time','12:00') }}" />
+      </label>
+      <label class="form-control">
+        <span class="label-text">Amount (₹)</span>
+        <input type="number" step="0.01" name="amount" class="input input-bordered" value="{{ form_defaults.get('amount','') }}" required />
+      </label>
+      <label class="form-control">
+        <span class="label-text">Category</span>
+        <select name="category" id="category" class="select select-bordered" required>
+          {% for cat, subs in categories %}
+            <option value="{{ cat }}" {% if form_defaults.get('category')==cat %}selected{% endif %}>{{ cat }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label class="form-control">
+        <span class="label-text">Subcategory</span>
+        <input name="subcategory" id="subcategory" class="input input-bordered" placeholder="optional" value="{{ form_defaults.get('subcategory','') }}" />
+      </label>
+      <label class="form-control">
+        <span class="label-text">Vendor (Dukaan / Service Wala)</span>
+        <input name="vendor" class="input input-bordered" placeholder="e.g. ABC Caterers" value="{{ form_defaults.get('vendor','') }}" />
+      </label>
+      <label class="form-control md:col-span-2">
+        <span class="label-text">Kis liye kharcha hua (Description)</span>
+        <input name="description" class="input input-bordered" placeholder="e.g. Catering advance payment" value="{{ form_defaults.get('description','') }}" />
+      </label>
+      <label class="form-control">
+        <span class="label-text">Payment Mode</span>
+        <select name="payment_mode" class="select select-bordered">
+          {% for m in ['Cash','UPI','Card','Bank'] %}
+          <option value="{{ m }}" {% if form_defaults.get('payment_mode')==m %}selected{% endif %}>{{ m }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label class="form-control">
+        <span class="label-text">Payment Type</span>
+        <select name="payment_type" class="select select-bordered">
+          {% for t in ['Advance','Final','Other'] %}
+          <option value="{{ t }}" {% if form_defaults.get('payment_type')==t %}selected{% endif %}>{{ t }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label class="form-control md:col-span-2">
+        <span class="label-text">Notes (kuch bhi extra)</span>
+        <textarea name="notes" class="textarea textarea-bordered" rows="3" placeholder="optional">{{ form_defaults.get('notes','') }}</textarea>
+      </label>
+
+      <label class="form-control md:col-span-2">
+        <span class="label-text">Bill Upload (Photo/PDF)</span>
+        <input type="file" name="file" accept=".png,.jpg,.jpeg,.pdf" class="file-input file-input-bordered" />
+        {% if expense and expense.attachment %}
+          <a href="{{ url_for('uploaded_file', filename=expense.attachment) }}" target="_blank" class="link">View existing</a>
+        {% endif %}
+      </label>
+
+      <div class="md:col-span-2 flex gap-2">
+        <button class="btn btn-primary">Save</button>
+        <a class="btn" href="{{ url_for('expenses_list') }}">Cancel</a>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

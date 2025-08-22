@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: marriage-expense-tracker
+    env: python
+    region: frankfurt
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app
+    autoDeploy: true
+    envVars:
+      - key: SECRET_KEY
+        generateValue: true
+      # Set this after you create Neon DB:
+      # - key: DATABASE_URL
+      #   value: postgresql://USER:PASSWORD@HOST:PORT/DB?sslmode=require

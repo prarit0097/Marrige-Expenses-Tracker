@@ -1,0 +1,19 @@
+\
+{% extends 'base.html' %}
+{% block content %}
+<div class="card bg-base-200">
+  <div class="card-body">
+    <h2 class="card-title">Monthly Summary</h2>
+    <div class="overflow-x-auto">
+      <table class="table">
+        <thead><tr><th>Month</th><th class="text-right">Total (₹)</th></tr></thead>
+        <tbody>
+          {% for m, amt in rows %}
+          <tr><td>{{ m }}</td><td class="text-right">₹{{ '%.2f'|format(amt) }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

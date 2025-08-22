@@ -1,0 +1,20 @@
+\
+{% extends 'base.html' %}
+{% block content %}
+<div class="card bg-base-200">
+  <div class="card-body">
+    <h2 class="card-title">Vendor-wise Summary</h2>
+    <div class="mb-2">Advance: ₹{{ '%.2f'|format(adv) }} | Final: ₹{{ '%.2f'|format(fin) }} | Other: ₹{{ '%.2f'|format(oth) }}</div>
+    <div class="overflow-x-auto">
+      <table class="table">
+        <thead><tr><th>Vendor</th><th class="text-right">Total (₹)</th></tr></thead>
+        <tbody>
+          {% for v, amt in rows %}
+          <tr><td>{{ v or '—' }}</td><td class="text-right">₹{{ '%.2f'|format(amt) }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

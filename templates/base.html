@@ -1,0 +1,68 @@
+\
+<!DOCTYPE html>
+<html lang="en" data-theme="winter">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Marriage Expense Tracker</title>
+  <!-- Tailwind + DaisyUI -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.10/dist/full.min.css" rel="stylesheet" />
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}" />
+</head>
+<body class="min-h-screen bg-base-100 text-base-content">
+  <div class="navbar bg-base-200 shadow-sm">
+    <div class="flex-1">
+      <a href="/" class="btn btn-ghost text-xl">💍 Shaadi Expense Tracker</a>
+    </div>
+    <div class="flex-none gap-2 items-center">
+      <a class="btn btn-ghost" href="{{ url_for('expenses_list') }}">Expenses</a>
+      <a class="btn btn-ghost" href="{{ url_for('import_export') }}">Import/Export</a>
+      <div class="tooltip" data-tip="Toggle Light/Dark">
+        <label class="swap swap-rotate mx-2">
+          <input id="themeToggle" type="checkbox" />
+          <svg class="swap-on w-6 h-6" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M21.64 13.64A9 9 0 1110.36 2.36 7 7 0 1021.64 13.64z"/></svg>
+          <svg class="swap-off w-6 h-6" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M6.76 4.84l-1.8-1.79L3.17 4.84 4.96 6.63 6.76 4.84zm10.45 0l1.79-1.79 1.79 1.79-1.79 1.79-1.79-1.79zM12 2h0v2h0V2zm0 18h0v2h0v-2zM2 12h2v0H2v0zm18 0h2v0h-2v0zM4.96 17.37l-1.79 1.79 1.79 1.79 1.79-1.79-1.79-1.79zm14.08 0l1.79 1.79-1.79 1.79-1.79-1.79 1.79-1.79z"/></svg>
+        </label>
+      </div>
+      <a class="btn btn-primary" href="{{ url_for('expense_form') }}">+ Add Expense</a>
+    </div>
+  </div>
+
+  <main class="container mx-auto p-4 lg:p-8">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <div class="space-y-2 mb-4">
+          {% for cat, msg in messages %}
+            <div class="alert {{ 'alert-success' if cat=='success' else 'alert-error' }}">
+              <span>{{ msg }}</span>
+            </div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
+
+    {% block content %}{% endblock %}
+  </main>
+
+  <script>
+    // Theme: auto (system), with manual toggle
+    const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+    const saved = localStorage.getItem('theme');
+    function applyTheme(theme){
+      document.documentElement.setAttribute('data-theme', theme);
+    }
+    if(saved){ applyTheme(saved); document.getElementById('themeToggle').checked = (saved==='dark'); }
+    else { applyTheme(prefersDark ? 'dark' : 'winter'); document.getElementById('themeToggle').checked = prefersDark; }
+    document.getElementById('themeToggle').addEventListener('change', (e)=>{
+      const theme = e.target.checked ? 'dark' : 'winter';
+      applyTheme(theme);
+      localStorage.setItem('theme', theme);
+    });
+  </script>
+
+  <script src="{{ url_for('static', filename='main.js') }}"></script>
+</body>
+</html>

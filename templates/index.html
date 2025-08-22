@@ -1,0 +1,90 @@
+\
+{% extends 'base.html' %}
+{% block content %}
+<div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+  <div class="stat bg-base-200 rounded-2xl">
+    <div class="stat-title">Total Spent</div>
+    <div class="stat-value">₹{{ '%.2f'|format(total) }}</div>
+    <div class="stat-desc">All-time</div>
+  </div>
+  <div class="stat bg-base-200 rounded-2xl">
+    <div class="stat-title">Aaj ka Kharcha</div>
+    <div class="stat-value">₹{{ '%.2f'|format(today_total) }}</div>
+    <div class="stat-desc">Today</div>
+  </div>
+  <div class="stat bg-base-200 rounded-2xl">
+    <div class="stat-title">Active Categories</div>
+    <div class="stat-value">{{ per_category|length }}</div>
+    <div class="stat-desc">running</div>
+  </div>
+</div>
+
+<div class="mt-4">
+  <div class="badge badge-lg {{ 'badge-error' if budget_pct > 80 else 'badge-info' }}">
+    Budget Used: {{ '%.1f'|format(budget_pct) }}% of ₹{{ budget }}
+  </div>
+</div>
+
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
+  <div class="card bg-base-200">
+    <div class="card-body">
+      <h2 class="card-title">Spend by Category</h2>
+      <canvas id="categoryChart"></canvas>
+    </div>
+  </div>
+  <div class="card bg-base-200">
+    <div class="card-body">
+      <h2 class="card-title">Daily Spend (Last 30 days)</h2>
+      <canvas id="dailyChart"></canvas>
+    </div>
+  </div>
+</div>
+
+<div class="card bg-base-200 mt-6">
+  <div class="card-body">
+    <h2 class="card-title">Latest Expenses</h2>
+    <div class="overflow-x-auto">
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Date & Time</th>
+            <th>Category</th>
+            <th>Sub</th>
+            <th>Vendor</th>
+            <th>Description</th>
+            <th class="text-right">Amount</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for e in latest %}
+          <tr>
+            <td>{{ e.dt|ist }}</td>
+            <td>{{ e.category }}</td>
+            <td>{{ e.subcategory or '-' }}</td>
+            <td>{{ e.vendor or '-' }}</td>
+            <td>{{ e.description or '-' }}</td>
+            <td class="text-right">₹{{ '%.2f'|format(e.amount) }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+  const categoryData = {
+    labels: [{% for c, amt in per_category %}'{{ c }}',{% endfor %}],
+    datasets: [{ data: [{% for c, amt in per_category %}{{ '%.2f'|format(amt) }},{% endfor %}] }]
+  }
+  new Chart(document.getElementById('categoryChart'), { type: 'pie', data: categoryData })
+
+  const dailyLabels = [{% for d, amt in last30 %}'{{ d }}',{% endfor %}]
+  const dailyValues = [{% for d, amt in last30 %}{{ '%.2f'|format(amt) }},{% endfor %}]
+  new Chart(document.getElementById('dailyChart'), {
+    type: 'line',
+    data: { labels: dailyLabels, datasets: [{ label: '₹ per day', data: dailyValues }] },
+    options: { scales: { y: { beginAtZero: true } } }
+  })
+</script>
+{% endblock %}
