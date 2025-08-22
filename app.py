@@ -1,78 +1,62 @@
 from datetime import datetime, date, timedelta
 from dateutil import tz
-from flask import Flask, render_template, request, redirect, url_for, flash, send_file, jsonify, send_from_directory
+from flask import (
+    Flask, render_template, request, redirect, url_for,
+    flash, send_file, jsonify, send_from_directory, abort
+)
 from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy import func
-from werkzeug.utils import secure_filename
+from sqlalchemy import func, inspect
 import csv, io, os, pytz
 
-try:
-    import psycopg2  # ensure available at runtime if DATABASE_URL is Postgres
-except Exception:
-    pass
-
-# -------- App Config --------
+# ============ App Config ============
 app = Flask(__name__, instance_relative_config=True)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-secret')
 
-# DB: Use DATABASE_URL (Postgres on Render/Neon) else local SQLite
+# DB: Use DATABASE_URL (Neon Postgres) else local SQLite
 db_url = os.getenv('DATABASE_URL')
 if db_url:
-    # Use psycopg (v3) driver with SQLAlchemy on Render/Neon
+    # Use psycopg v3 driver with SQLAlchemy
     if db_url.startswith('postgres://'):
         db_url = db_url.replace('postgres://', 'postgresql+psycopg://', 1)
     elif db_url.startswith('postgresql://') and 'postgresql+psycopg://' not in db_url and '+psycopg' not in db_url:
         db_url = db_url.replace('postgresql://', 'postgresql+psycopg://', 1)
     app.config['SQLALCHEMY_DATABASE_URI'] = db_url
-
 else:
     os.makedirs(app.instance_path, exist_ok=True)
     app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(app.instance_path, 'tracker.db')
 
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
-# Uploads (note: not persistent on free Render)
+# Uploads (Render free disk is ephemeral; okay for demo)
 UPLOAD_FOLDER = os.path.join(app.instance_path, 'uploads')
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
-ALLOWED_EXTENSIONS = {'.png','.jpg','.jpeg','.pdf'}
+ALLOWED_EXTENSIONS = {'.png', '.jpg', '.jpeg', '.pdf'}
 
-db = SQLAlchemy(app)
+# ============ DB ============
+db = SQLAlchemy()          # single global instance
+db.init_app(app)           # bind once
 
-# single registration
-db = SQLAlchemy(app)
-
-# --- auto-create tables on startup (idempotent) ---
+# Auto-create tables on startup (idempotent & safe)
 with app.app_context():
     db.create_all()
-# --------------------------------------------------
 
-
-# --- Auto-create tables on startup (works with gunicorn too) ---
-from sqlalchemy import inspect
-with app.app_context():
-    insp = inspect(db.engine)
-    if not insp.has_table("expense"):
-        db.create_all()
-# ----------------------------------------------------------------
-
-
-# -------- Timezone --------
+# ============ Timezone ============
 IST = tz.gettz('Asia/Kolkata')
 def now_ist():
     return datetime.now(tz=IST)
 
-# -------- Models --------
+# ============ Models ============
 class Expense(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    dt = db.Column(db.DateTime, nullable=False, index=True)  # exact date+time of expense
+    dt = db.Column(db.DateTime, nullable=False, index=True)  # timezone-aware
     category = db.Column(db.String(80), nullable=False, index=True)
     subcategory = db.Column(db.String(80), nullable=True, index=True)
     vendor = db.Column(db.String(120), nullable=True, index=True)
     description = db.Column(db.String(240), nullable=True)
     amount = db.Column(db.Float, nullable=False)
-    payment_mode = db.Column(db.String(40), nullable=True)   # Cash, UPI, Card, Bank
-    payment_type = db.Column(db.String(20), nullable=True)   # Advance, Final, Other
+    payment_mode = db.Column(db.String(40), nullable=True)   # Cash/UPI/Card/Bank
+    payment_type = db.Column(db.String(20), nullable=True)   # Advance/Final/Other
     notes = db.Column(db.Text, nullable=True)
     attachment = db.Column(db.String(200), nullable=True)    # stored filename
     created_at = db.Column(db.DateTime, nullable=False, default=lambda: now_ist())
@@ -80,7 +64,7 @@ class Expense(db.Model):
     def __repr__(self):
         return f"<Expense {self.id} ₹{self.amount} {self.category}>"
 
-# -------- Defaults --------
+# ============ Defaults ============
 DEFAULT_CATEGORIES = [
     ("Venue", ["Hall", "Decor", "Lighting", "Sound"]),
     ("Catering", ["Food", "Beverages", "Snacks", "Desserts"]),
@@ -96,10 +80,9 @@ DEFAULT_CATEGORIES = [
     ("Baraat", ["Logistics", "Horse/Car", "Dhol"]),
     ("Misc", ["Tips", "Contingency"]),
 ]
-
 BUDGET_OVERALL = 1000000  # ₹10,00,000
 
-# -------- Helpers & Filters --------
+# ============ Helpers ============
 def parse_dt(date_str, time_str):
     if not date_str:
         raise ValueError("Date is required")
@@ -109,8 +92,16 @@ def parse_dt(date_str, time_str):
     return dt_naive.replace(tzinfo=IST)
 
 def allowed_file(filename):
-    return os.path.splitext(filename)[1].lower() in {'.png','.jpg','.jpeg','.pdf'}
+    return os.path.splitext(filename)[1].lower() in ALLOWED_EXTENSIONS
 
+def using_postgres() -> bool:
+    try:
+        name = db.session.bind.dialect.name
+        return name.startswith("postgresql")
+    except Exception:
+        return False
+
+# ============ Jinja Filters / Context ============
 @app.template_filter("ist")
 def fmt_ist(dt):
     if not dt:
@@ -123,7 +114,7 @@ def inject_budget():
     pct = (total / BUDGET_OVERALL * 100.0) if BUDGET_OVERALL else 0.0
     return dict(total_spent=total, budget=BUDGET_OVERALL, budget_pct=pct)
 
-# -------- Routes --------
+# ============ Routes ============
 @app.route('/')
 def dashboard():
     total = db.session.query(func.coalesce(func.sum(Expense.amount), 0.0)).scalar() or 0.0
@@ -140,13 +131,23 @@ def dashboard():
 
     latest = Expense.query.order_by(Expense.dt.desc()).limit(10).all()
 
+    # Last 30 days (DB-agnostic)
     start_30 = now_ist() - timedelta(days=30)
-    last30 = db.session.query(
-        func.strftime('%Y-%m-%d', Expense.dt),
-        func.sum(Expense.amount)
-    ).filter(Expense.dt >= start_30)\
-     .group_by(func.strftime('%Y-%m-%d', Expense.dt))\
-     .order_by(func.strftime('%Y-%m-%d', Expense.dt)).all()
+    if using_postgres():
+        day_bucket = func.date_trunc('day', Expense.dt)
+        last30 = db.session.query(day_bucket.label('d'), func.sum(Expense.amount))\
+            .filter(Expense.dt >= start_30)\
+            .group_by('d').order_by('d').all()
+        # format date for chart labels
+        last30 = [(d.date().isoformat(), amt) for d, amt in last30]
+    else:
+        # SQLite
+        last30 = db.session.query(
+            func.strftime('%Y-%m-%d', Expense.dt),
+            func.sum(Expense.amount)
+        ).filter(Expense.dt >= start_30)\
+         .group_by(func.strftime('%Y-%m-%d', Expense.dt))\
+         .order_by(func.strftime('%Y-%m-%d', Expense.dt)).all()
 
     return render_template('index.html', total=total, today_total=today_total,
                            per_category=per_category, latest=latest, last30=last30)
@@ -172,7 +173,11 @@ def expenses_list():
         q = q.filter(Expense.payment_type == payment_type)
     if search:
         like = f"%{search}%"
-        q = q.filter((Expense.vendor.ilike(like)) | (Expense.description.ilike(like)) | (Expense.notes.ilike(like)))
+        q = q.filter(
+            (Expense.vendor.ilike(like)) |
+            (Expense.description.ilike(like)) |
+            (Expense.notes.ilike(like))
+        )
 
     expenses = q.order_by(Expense.dt.desc()).all()
     subtotal = sum(e.amount for e in expenses)
@@ -209,9 +214,11 @@ def expense_form(expense_id=None):
                 expense.payment_type = payment_type
                 expense.notes = notes
             else:
-                expense = Expense(dt=dt, amount=amount, category=category, subcategory=subcategory,
-                                  vendor=vendor, description=description, payment_mode=payment_mode,
-                                  payment_type=payment_type, notes=notes)
+                expense = Expense(
+                    dt=dt, amount=amount, category=category, subcategory=subcategory,
+                    vendor=vendor, description=description, payment_mode=payment_mode,
+                    payment_type=payment_type, notes=notes
+                )
                 db.session.add(expense)
 
             # Attachment upload
@@ -224,11 +231,11 @@ def expense_form(expense_id=None):
                     from werkzeug.utils import secure_filename
                     filename = secure_filename(file.filename)
                     # ensure unique
-                    base, ext = os.path.splitext(filename)
+                    base, extn = os.path.splitext(filename)
                     final = filename
                     i = 1
                     while os.path.exists(os.path.join(app.config['UPLOAD_FOLDER'], final)):
-                        final = f"{base}_{i}{ext}"
+                        final = f"{base}_{i}{extn}"
                         i += 1
                     filepath = os.path.join(app.config['UPLOAD_FOLDER'], final)
                     file.save(filepath)
@@ -276,16 +283,16 @@ def import_export():
 def export_csv():
     output = io.StringIO()
     writer = csv.writer(output)
-    writer.writerow(['date', 'time', 'category', 'subcategory', 'vendor', 'description', 'amount', 'payment_mode', 'payment_type', 'notes', 'attachment'])
+    writer.writerow(['date', 'time', 'category', 'subcategory', 'vendor', 'description',
+                     'amount', 'payment_mode', 'payment_type', 'notes', 'attachment'])
     for e in Expense.query.order_by(Expense.dt.asc()).all():
         d = e.dt.astimezone(IST)
         writer.writerow([
-            d.strftime('%Y-%m-%d'), d.strftime('%H:%M'), e.category, e.subcategory or '', e.vendor or '',
-            e.description or '', f"{e.amount:.2f}", e.payment_mode or '', e.payment_type or '',
-            e.notes or '', e.attachment or ''
+            d.strftime('%Y-%m-%d'), d.strftime('%H:%M'), e.category, e.subcategory or '',
+            e.vendor or '', e.description or '', f"{e.amount:.2f}",
+            e.payment_mode or '', e.payment_type or '', e.notes or '', e.attachment or ''
         ])
-    mem = io.BytesIO(output.getvalue().encode('utf-8'))
-    mem.seek(0)
+    mem = io.BytesIO(output.getvalue().encode('utf-8')); mem.seek(0)
     return send_file(mem, mimetype='text/csv', as_attachment=True, download_name='expenses_all.csv')
 
 @app.route('/import.csv', methods=['POST'])
@@ -332,18 +339,24 @@ from reportlab.lib.units import cm
 def report_vendor():
     rows = db.session.query(Expense.vendor, func.sum(Expense.amount))\
         .group_by(Expense.vendor).order_by(func.sum(Expense.amount).desc()).all()
-    adv = db.session.query(func.coalesce(func.sum(Expense.amount), 0.0)).filter(Expense.payment_type=='Advance').scalar() or 0.0
-    fin = db.session.query(func.coalesce(func.sum(Expense.amount), 0.0)).filter(Expense.payment_type=='Final').scalar() or 0.0
-    oth = db.session.query(func.coalesce(func.sum(Expense.amount), 0.0)).filter(Expense.payment_type=='Other').scalar() or 0.0
+    adv = db.session.query(func.coalesce(func.sum(Expense.amount), 0.0)).filter(Expense.payment_type == 'Advance').scalar() or 0.0
+    fin = db.session.query(func.coalesce(func.sum(Expense.amount), 0.0)).filter(Expense.payment_type == 'Final').scalar() or 0.0
+    oth = db.session.query(func.coalesce(func.sum(Expense.amount), 0.0)).filter(Expense.payment_type == 'Other').scalar() or 0.0
     return render_template('report_vendor.html', rows=rows, adv=adv, fin=fin, oth=oth)
 
 @app.route('/report/monthly')
 def report_monthly():
-    rows = db.session.query(
-        func.strftime('%Y-%m', Expense.dt),
-        func.sum(Expense.amount)
-    ).group_by(func.strftime('%Y-%m', Expense.dt))\
-     .order_by(func.strftime('%Y-%m', Expense.dt)).all()
+    if using_postgres():
+        month_bucket = func.date_trunc('month', Expense.dt)
+        rows = db.session.query(month_bucket.label('m'), func.sum(Expense.amount))\
+            .group_by('m').order_by('m').all()
+        rows = [(m.date().strftime('%Y-%m'), amt) for m, amt in rows]
+    else:
+        rows = db.session.query(
+            func.strftime('%Y-%m', Expense.dt),
+            func.sum(Expense.amount)
+        ).group_by(func.strftime('%Y-%m', Expense.dt))\
+         .order_by(func.strftime('%Y-%m', Expense.dt)).all()
     return render_template('report_monthly.html', rows=rows)
 
 @app.route('/export/vendor.csv')
@@ -360,11 +373,18 @@ def export_vendor_csv():
 
 @app.route('/export/monthly.csv')
 def export_monthly_csv():
-    rows = db.session.query(
-        func.strftime('%Y-%m', Expense.dt),
-        func.sum(Expense.amount)
-    ).group_by(func.strftime('%Y-%m', Expense.dt))\
-     .order_by(func.strftime('%Y-%m', Expense.dt)).all()
+    if using_postgres():
+        month_bucket = func.date_trunc('month', Expense.dt)
+        rows = db.session.query(month_bucket.label('m'), func.sum(Expense.amount))\
+            .group_by('m').order_by('m').all()
+        rows = [(m.date().strftime('%Y-%m'), amt) for m, amt in rows]
+    else:
+        rows = db.session.query(
+            func.strftime('%Y-%m', Expense.dt),
+            func.sum(Expense.amount)
+        ).group_by(func.strftime('%Y-%m', Expense.dt))\
+         .order_by(func.strftime('%Y-%m', Expense.dt)).all()
+
     output = io.StringIO()
     w = csv.writer(output)
     w.writerow(['Month (YYYY-MM)', 'Total Amount (₹)'])
@@ -383,7 +403,7 @@ def _pdf_table(filename, title, headers, rows):
     y = height - 3*cm
     col_widths = [max(6*cm, (width-4*cm)/len(headers))]*len(headers)
     x = 2*cm
-    for i,h in enumerate(headers):
+    for i, h in enumerate(headers):
         c.drawString(x, y, str(h))
         x += col_widths[i]
     y -= 0.8*cm
@@ -393,7 +413,7 @@ def _pdf_table(filename, title, headers, rows):
             c.setFont("Helvetica", 10)
             y = height - 2*cm
         x = 2*cm
-        for i,cell in enumerate(row):
+        for i, cell in enumerate(row):
             c.drawString(x, y, str(cell))
             x += col_widths[i]
         y -= 0.6*cm
@@ -406,31 +426,38 @@ def _pdf_table(filename, title, headers, rows):
 def export_vendor_pdf():
     rows = db.session.query(Expense.vendor, func.sum(Expense.amount))\
         .group_by(Expense.vendor).order_by(func.sum(Expense.amount).desc()).all()
-    rows_fmt = [(v or '—', f"₹{float(a):.2f}") for v,a in rows]
-    return _pdf_table('vendor_summary.pdf', 'Vendor-wise Summary', ['Vendor','Total (₹)'], rows_fmt)
+    rows_fmt = [(v or '—', f"₹{float(a):.2f}") for v, a in rows]
+    return _pdf_table('vendor_summary.pdf', 'Vendor-wise Summary', ['Vendor', 'Total (₹)'], rows_fmt)
 
 @app.route('/export/monthly.pdf')
 def export_monthly_pdf():
-    rows = db.session.query(
-        func.strftime('%Y-%m', Expense.dt),
-        func.sum(Expense.amount)
-    ).group_by(func.strftime('%Y-%m', Expense.dt))\
-     .order_by(func.strftime('%Y-%m', Expense.dt)).all()
-    rows_fmt = [(m, f"₹{float(a):.2f}") for m,a in rows]
-    return _pdf_table('monthly_summary.pdf', 'Monthly Summary', ['Month','Total (₹)'], rows_fmt)
+    if using_postgres():
+        month_bucket = func.date_trunc('month', Expense.dt)
+        rows = db.session.query(month_bucket.label('m'), func.sum(Expense.amount))\
+            .group_by('m').order_by('m').all()
+        rows_fmt = [(m.date().strftime('%Y-%m'), f"₹{float(a):.2f}") for m, a in rows]
+    else:
+        rows = db.session.query(
+            func.strftime('%Y-%m', Expense.dt),
+            func.sum(Expense.amount)
+        ).group_by(func.strftime('%Y-%m', Expense.dt))\
+         .order_by(func.strftime('%Y-%m', Expense.dt)).all()
+        rows_fmt = [(m, f"₹{float(a):.2f}") for m, a in rows]
+    return _pdf_table('monthly_summary.pdf', 'Monthly Summary', ['Month', 'Total (₹)'], rows_fmt)
 
 # Serve uploaded files
 @app.route('/uploads/<path:filename>')
 def uploaded_file(filename):
     return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
 
-# CLI
+# ============ CLI ============
 @app.cli.command('init-db')
 def init_db():
     with app.app_context():
         db.create_all()
         print("Database initialized at:", app.config['SQLALCHEMY_DATABASE_URI'])
 
+# ============ Dev Server ============
 if __name__ == '__main__':
     with app.app_context():
         db.create_all()
