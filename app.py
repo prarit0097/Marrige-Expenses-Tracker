@@ -18,12 +18,13 @@ app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-secret')
 # DB: Use DATABASE_URL (Postgres on Render/Neon) else local SQLite
 db_url = os.getenv('DATABASE_URL')
 if db_url:
-    # SQLAlchemy expects postgresql+psycopg2://
+    # Use psycopg (v3) driver with SQLAlchemy on Render/Neon
     if db_url.startswith('postgres://'):
-        db_url = db_url.replace('postgres://', 'postgresql+psycopg2://', 1)
-    elif db_url.startswith('postgresql://') and 'postgresql+psycopg2://' not in db_url:
-        db_url = db_url.replace('postgresql://', 'postgresql+psycopg2://', 1)
+        db_url = db_url.replace('postgres://', 'postgresql+psycopg://', 1)
+    elif db_url.startswith('postgresql://') and 'postgresql+psycopg://' not in db_url and '+psycopg' not in db_url:
+        db_url = db_url.replace('postgresql://', 'postgresql+psycopg://', 1)
     app.config['SQLALCHEMY_DATABASE_URI'] = db_url
+
 else:
     os.makedirs(app.instance_path, exist_ok=True)
     app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(app.instance_path, 'tracker.db')
