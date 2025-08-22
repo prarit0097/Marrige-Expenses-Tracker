@@ -5,7 +5,7 @@ from flask import (
     flash, send_file, jsonify, send_from_directory, abort
 )
 from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy import func, inspect
+from sqlalchemy import func
 import csv, io, os, pytz
 
 # ============ App Config ============
@@ -37,10 +37,6 @@ ALLOWED_EXTENSIONS = {'.png', '.jpg', '.jpeg', '.pdf'}
 db = SQLAlchemy()          # single global instance
 db.init_app(app)           # bind once
 
-# Auto-create tables on startup (idempotent & safe)
-with app.app_context():
-    db.create_all()
-
 # ============ Timezone ============
 IST = tz.gettz('Asia/Kolkata')
 def now_ist():
@@ -63,6 +59,10 @@ class Expense(db.Model):
 
     def __repr__(self):
         return f"<Expense {self.id} ₹{self.amount} {self.category}>"
+
+# 🔸 IMPORTANT: create tables AFTER models are defined
+with app.app_context():
+    db.create_all()
 
 # ============ Defaults ============
 DEFAULT_CATEGORIES = [
@@ -134,14 +134,13 @@ def dashboard():
     # Last 30 days (DB-agnostic)
     start_30 = now_ist() - timedelta(days=30)
     if using_postgres():
-        day_bucket = func.date_trunc('day', Expense.dt)
-        last30 = db.session.query(day_bucket.label('d'), func.sum(Expense.amount))\
+        from sqlalchemy import func as sa_func
+        day_bucket = sa_func.date_trunc('day', Expense.dt)
+        last30 = db.session.query(day_bucket.label('d'), sa_func.sum(Expense.amount))\
             .filter(Expense.dt >= start_30)\
             .group_by('d').order_by('d').all()
-        # format date for chart labels
         last30 = [(d.date().isoformat(), amt) for d, amt in last30]
     else:
-        # SQLite
         last30 = db.session.query(
             func.strftime('%Y-%m-%d', Expense.dt),
             func.sum(Expense.amount)
@@ -230,7 +229,6 @@ def expense_form(expense_id=None):
                         raise ValueError("File type not allowed (png, jpg, jpeg, pdf only).")
                     from werkzeug.utils import secure_filename
                     filename = secure_filename(file.filename)
-                    # ensure unique
                     base, extn = os.path.splitext(filename)
                     final = filename
                     i = 1
@@ -347,8 +345,9 @@ def report_vendor():
 @app.route('/report/monthly')
 def report_monthly():
     if using_postgres():
-        month_bucket = func.date_trunc('month', Expense.dt)
-        rows = db.session.query(month_bucket.label('m'), func.sum(Expense.amount))\
+        from sqlalchemy import func as sa_func
+        month_bucket = sa_func.date_trunc('month', Expense.dt)
+        rows = db.session.query(month_bucket.label('m'), sa_func.sum(Expense.amount))\
             .group_by('m').order_by('m').all()
         rows = [(m.date().strftime('%Y-%m'), amt) for m, amt in rows]
     else:
@@ -374,8 +373,9 @@ def export_vendor_csv():
 @app.route('/export/monthly.csv')
 def export_monthly_csv():
     if using_postgres():
-        month_bucket = func.date_trunc('month', Expense.dt)
-        rows = db.session.query(month_bucket.label('m'), func.sum(Expense.amount))\
+        from sqlalchemy import func as sa_func
+        month_bucket = sa_func.date_trunc('month', Expense.dt)
+        rows = db.session.query(month_bucket.label('m'), sa_func.sum(Expense.amount))\
             .group_by('m').order_by('m').all()
         rows = [(m.date().strftime('%Y-%m'), amt) for m, amt in rows]
     else:
@@ -432,8 +432,9 @@ def export_vendor_pdf():
 @app.route('/export/monthly.pdf')
 def export_monthly_pdf():
     if using_postgres():
-        month_bucket = func.date_trunc('month', Expense.dt)
-        rows = db.session.query(month_bucket.label('m'), func.sum(Expense.amount))\
+        from sqlalchemy import func as sa_func
+        month_bucket = sa_func.date_trunc('month', Expense.dt)
+        rows = db.session.query(month_bucket.label('m'), sa_func.sum(Expense.amount))\
             .group_by('m').order_by('m').all()
         rows_fmt = [(m.date().strftime('%Y-%m'), f"₹{float(a):.2f}") for m, a in rows]
     else:
