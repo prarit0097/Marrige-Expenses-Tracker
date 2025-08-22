@@ -39,6 +39,17 @@ ALLOWED_EXTENSIONS = {'.png','.jpg','.jpeg','.pdf'}
 
 db = SQLAlchemy(app)
 
+db = SQLAlchemy(app)
+
+# --- Auto-create tables on startup (works with gunicorn too) ---
+from sqlalchemy import inspect
+with app.app_context():
+    insp = inspect(db.engine)
+    if not insp.has_table("expense"):
+        db.create_all()
+# ----------------------------------------------------------------
+
+
 # -------- Timezone --------
 IST = tz.gettz('Asia/Kolkata')
 def now_ist():
