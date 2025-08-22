@@ -39,6 +39,15 @@ ALLOWED_EXTENSIONS = {'.png','.jpg','.jpeg','.pdf'}
 
 db = SQLAlchemy(app)
 
+# single registration
+db = SQLAlchemy(app)
+
+# --- auto-create tables on startup (idempotent) ---
+with app.app_context():
+    db.create_all()
+# --------------------------------------------------
+
+
 # --- Auto-create tables on startup (works with gunicorn too) ---
 from sqlalchemy import inspect
 with app.app_context():
