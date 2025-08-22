@@ -95,11 +95,8 @@ def allowed_file(filename):
     return os.path.splitext(filename)[1].lower() in ALLOWED_EXTENSIONS
 
 def using_postgres() -> bool:
-    try:
-        name = db.session.bind.dialect.name
-        return name.startswith("postgresql")
-    except Exception:
-        return False
+    uri = app.config.get('SQLALCHEMY_DATABASE_URI', '') or ''
+    return uri.startswith('postgresql')
 
 # ============ Jinja Filters / Context ============
 @app.template_filter("ist")
